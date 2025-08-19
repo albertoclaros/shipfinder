@@ -10,26 +10,102 @@
       height: 100vh;
       width: 100%;
     }
+    .navbar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background-color: black;
+      color: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+    }
+    .navbar button, .navbar input {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 18px;
+    }
+    .navbar input {
+      background-color: #222;
+      padding: 5px;
+      border-radius: 5px;
+      color: white;
+    }
+    .popup-flotas {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.95);
+      color: white;
+      z-index: 1000;
+      overflow-y: auto;
+      padding: 20px;
+    }
+    .popup-flotas.active {
+      display: block;
+    }
+    .popup-flotas h2 {
+      margin-top: 0;
+    }
+    .close-popup {
+      background: red;
+      color: white;
+      border: none;
+      padding: 10px;
+      margin-bottom: 20px;
+      cursor: pointer;
+    }
+    .flota {
+      margin-bottom: 20px;
+      border: 1px solid #555;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .flota h3 {
+      margin: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .flota input {
+      width: 70%;
+      margin-bottom: 5px;
+    }
+    .flota button {
+      margin-left: 5px;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
+  <div class="navbar">
+    <button id="btnFlotas">⚓ Flotas</button>
+    <input type="text" id="buscador" placeholder="Buscar buque..." />
+  </div>
+
+  <div class="popup-flotas" id="popupFlotas">
+    <button class="close-popup" id="closePopup">Cerrar</button>
+    <h2>Gestión de Flotas</h2>
+    <button id="crearFlota">+ Crear Flota</button>
+    <div id="flotasContainer"></div>
+  </div>
+
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    // 🔑 Reemplaza con tu API KEY de AISStream.io
     const API_KEY = "4ee9dacb9c0126f73eeafa902bdecb146397ac9f";
-
-    // Crear mapa
     const map = L.map('map').setView([0, 0], 2);
-
-    // Cargar mapa base
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // Icono de barco
     const barcoIcon = L.icon({
       iconUrl: 'https://cdn-icons-png.flaticon.com/512/77/77104.png',
       iconSize: [28, 28],
@@ -37,19 +113,16 @@
       popupAnchor: [0, -14]
     });
 
-    // Diccionario para guardar los barcos en el mapa
     const barcos = {};
+    const flotas = {};
 
-    // Conectar al WebSocket de AISStream
     const socket = new WebSocket("wss://stream.aisstream.io/v0/stream?apikey=" + API_KEY);
 
     socket.onopen = () => {
       console.log("✅ Conectado a AISStream.io");
-
-      // Suscribirse a todos los barcos (puedes filtrar por zona si quieres)
       const subscription = {
         Apikey: API_KEY,
-        BoundingBoxes: [[[-90, -180], [90, 180]]], // Todo el mundo
+        BoundingBoxes: [[[-90, -180], [90, 180]]],
         FiltersShipMMSI: []
       };
       socket.send(JSON.stringify(subscription));
@@ -57,18 +130,15 @@
 
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-
       if (data.MessageType === "PositionReport") {
         const mmsi = data.MetaData.MMSI;
         const lat = data.Message.Latitude;
         const lon = data.Message.Longitude;
         const nombre = data.MetaData.ShipName || "Barco " + mmsi;
 
-        // Si ya existe el barco → mover marcador
         if (barcos[mmsi]) {
           barcos[mmsi].setLatLng([lat, lon]);
         } else {
-          // Si no existe → crear marcador nuevo
           barcos[mmsi] = L.marker([lat, lon], { icon: barcoIcon })
             .addTo(map)
             .bindPopup(`<b>${nombre}</b><br>MMSI: ${mmsi}`);
@@ -79,6 +149,79 @@
     socket.onerror = (err) => {
       console.error("❌ Error en AISStream:", err);
     };
+
+    // Popup de flotas
+    const btnFlotas = document.getElementById("btnFlotas");
+    const popupFlotas = document.getElementById("popupFlotas");
+    const closePopup = document.getElementById("closePopup");
+    const crearFlotaBtn = document.getElementById("crearFlota");
+    const flotasContainer = document.getElementById("flotasContainer");
+
+    btnFlotas.addEventListener("click", () => {
+      popupFlotas.classList.add("active");
+    });
+
+    closePopup.addEventListener("click", () => {
+      popupFlotas.classList.remove("active");
+    });
+
+    crearFlotaBtn.addEventListener("click", () => {
+      const nombreFlota = prompt("Nombre de la nueva flota:");
+      if (!nombreFlota) return;
+      flotas[nombreFlota] = [];
+      renderFlotas();
+    });
+
+    function renderFlotas() {
+      flotasContainer.innerHTML = '';
+      for (const nombreFlota in flotas) {
+        const div = document.createElement('div');
+        div.className = 'flota';
+        div.innerHTML = `<h3>${nombreFlota} <button onclick='eliminarFlota("${nombreFlota}")'>X</button></h3>`;
+        const input = document.createElement('input');
+        input.placeholder = 'Agregar MMSI del barco';
+        input.addEventListener('keypress', e => {
+          if (e.key === 'Enter' && input.value.trim()) {
+            flotas[nombreFlota].push(input.value.trim());
+            input.value = '';
+            renderFlotas();
+          }
+        });
+        div.appendChild(input);
+        const lista = document.createElement('ul');
+        flotas[nombreFlota].forEach(mmsi => {
+          const li = document.createElement('li');
+          li.textContent = mmsi + ' '; 
+          const btn = document.createElement('button');
+          btn.textContent = 'Eliminar';
+          btn.onclick = () => { flotas[nombreFlota] = flotas[nombreFlota].filter(b => b !== mmsi); renderFlotas(); };
+          li.appendChild(btn);
+          lista.appendChild(li);
+        });
+        div.appendChild(lista);
+        flotasContainer.appendChild(div);
+      }
+    }
+
+    function eliminarFlota(nombreFlota) {
+      delete flotas[nombreFlota];
+      renderFlotas();
+    }
+
+    // Buscador de buques
+    const buscador = document.getElementById("buscador");
+    buscador.addEventListener("input", () => {
+      const query = buscador.value.toLowerCase();
+      for (const mmsi in barcos) {
+        const marker = barcos[mmsi];
+        const popup = marker.getPopup();
+        if (popup && popup.getContent().toLowerCase().includes(query)) {
+          marker.openPopup();
+          map.setView(marker.getLatLng(), 6);
+          break;
+        }
+      }
+    });
   </script>
 </body>
 </html>
