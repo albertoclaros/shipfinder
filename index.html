@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mi Flota en Tiempo Real</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // 🔑 Reemplaza con tu API KEY de AISStream.io
+    const API_KEY = "4ee9dacb9c0126f73eeafa902bdecb146397ac9f";
+
+    // Crear mapa
+    const map = L.map('map').setView([0, 0], 2);
+
+    // Cargar mapa base
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // Icono de barco
+    const barcoIcon = L.icon({
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/77/77104.png',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -14]
+    });
+
+    // Diccionario para guardar los barcos en el mapa
+    const barcos = {};
+
+    // Conectar al WebSocket de AISStream
+    const socket = new WebSocket("wss://stream.aisstream.io/v0/stream?apikey=" + API_KEY);
+
+    socket.onopen = () => {
+      console.log("✅ Conectado a AISStream.io");
+
+      // Suscribirse a todos los barcos (puedes filtrar por zona si quieres)
+      const subscription = {
+        Apikey: API_KEY,
+        BoundingBoxes: [[[-90, -180], [90, 180]]], // Todo el mundo
+        FiltersShipMMSI: []
+      };
+      socket.send(JSON.stringify(subscription));
+    };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.MessageType === "PositionReport") {
+        const mmsi = data.MetaData.MMSI;
+        const lat = data.Message.Latitude;
+        const lon = data.Message.Longitude;
+        const nombre = data.MetaData.ShipName || "Barco " + mmsi;
+
+        // Si ya existe el barco → mover marcador
+        if (barcos[mmsi]) {
+          barcos[mmsi].setLatLng([lat, lon]);
+        } else {
+          // Si no existe → crear marcador nuevo
+          barcos[mmsi] = L.marker([lat, lon], { icon: barcoIcon })
+            .addTo(map)
+            .bindPopup(`<b>${nombre}</b><br>MMSI: ${mmsi}`);
+        }
+      }
+    };
+
+    socket.onerror = (err) => {
+      console.error("❌ Error en AISStream:", err);
+    };
+  </script>
+</body>
+</html>
